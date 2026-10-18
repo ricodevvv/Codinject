@@ -1,0 +1,87 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+description = 'Load Maven dependencies at runtime, from Java 8 to Java 25'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.14.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 8
+    options.compilerArgs.addAll(['-Xlint:all', '-Xlint:-options'])
+}
+
+javadoc {
+    options.encoding = 'UTF-8'
+    options.addStringOption('Xdoclint:all,-missing', '-quiet')
+}
+
+jar {
+    manifest {
+        attributes(
+                'Implementation-Title': 'Codinject',
+                'Implementation-Version': project.version,
+                'Premain-Class': 'com.ricodevvv.codinject.CodinjectAgent',
+                'Agent-Class': 'com.ricodevvv.codinject.CodinjectAgent'
+        )
+    }
+}
+
+def testJava = providers.gradleProperty('testJava')
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat = 'full'
+    }
+    if (testJava.isPresent()) {
+        javaLauncher = javaToolchains.launcherFor {
+            languageVersion = JavaLanguageVersion.of(testJava.get() as int)
+        }
+    }
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            pom {
+                name = 'Codinject'
+                description = project.description
+                url = 'https://github.com/ricodevvv/Codinject'
+                licenses {
+                    license {
+                        name = 'MIT License'
+                        url = 'https://opensource.org/license/MIT'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'ricodevvv'
+                        name = 'ricodevvv'
+                    }
+                }
+                scm {
+                    url = 'https://github.com/ricodevvv/Codinject'
+                    connection = 'scm:git:https://github.com/ricodevvv/Codinject.git'
+                }
+            }
+        }
+    }
+}
