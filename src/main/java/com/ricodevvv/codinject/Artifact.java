@@ -1,5 +1,6 @@
 package com.ricodevvv.codinject;
 
+import java.net.URI;
 import java.util.Objects;
 
 /**
@@ -16,6 +17,7 @@ public final class Artifact {
     private final String classifier;
     private final String extension;
     private final String snapshotVersion;
+    private final String filePath;
 
     /**
      * Creates the coordinates by hand.
@@ -27,16 +29,17 @@ public final class Artifact {
      * @param extension  file extension, {@code jar} when {@code null}
      */
     public Artifact(String groupId, String artifactId, String version, String classifier, String extension) {
-        this(groupId, artifactId, version, classifier, extension, null);
+        this(groupId, artifactId, version, classifier, extension, null, null);
     }
 
-    private Artifact(String groupId, String artifactId, String version, String classifier, String extension, String snapshotVersion) {
+    private Artifact(String groupId, String artifactId, String version, String classifier, String extension, String snapshotVersion, String filePath) {
         this.groupId = require(groupId, "groupId");
         this.artifactId = require(artifactId, "artifactId");
         this.version = require(version, "version");
         this.classifier = classifier == null || classifier.isEmpty() ? null : classifier;
         this.extension = extension == null || extension.isEmpty() ? "jar" : extension;
         this.snapshotVersion = snapshotVersion;
+        this.filePath = filePath;
     }
 
     private static String require(String value, String name) {
@@ -127,7 +130,17 @@ public final class Artifact {
     }
 
     Artifact withSnapshotVersion(String snapshotVersion) {
-        return new Artifact(groupId, artifactId, version, classifier, extension, snapshotVersion);
+        return new Artifact(groupId, artifactId, version, classifier, extension, snapshotVersion, null);
+    }
+
+    /**
+     * Same artifact stored at another path, for Gradle variants whose file doesn't follow the Maven naming.
+     *
+     * @param url file URL from the Gradle metadata, relative to the artifact directory
+     */
+    Artifact withFile(String url) {
+        String path = URI.create(getDirectory() + '/').resolve(url).getPath();
+        return new Artifact(groupId, artifactId, version, classifier, extension, snapshotVersion, path);
     }
 
     String getDirectory() {
@@ -135,11 +148,18 @@ public final class Artifact {
     }
 
     String getPath() {
+        if (filePath != null) {
+            return filePath;
+        }
         return getDirectory() + '/' + artifactId + '-' + getFileVersion() + (classifier == null ? "" : '-' + classifier) + '.' + extension;
     }
 
     String getPomPath() {
         return getDirectory() + '/' + artifactId + '-' + getFileVersion() + ".pom";
+    }
+
+    String getModulePath() {
+        return getDirectory() + '/' + artifactId + '-' + getFileVersion() + ".module";
     }
 
     @Override
@@ -156,12 +176,13 @@ public final class Artifact {
                 && version.equals(other.version)
                 && Objects.equals(classifier, other.classifier)
                 && extension.equals(other.extension)
-                && Objects.equals(snapshotVersion, other.snapshotVersion);
+                && Objects.equals(snapshotVersion, other.snapshotVersion)
+                && Objects.equals(filePath, other.filePath);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(groupId, artifactId, version, classifier, extension, snapshotVersion);
+        return Objects.hash(groupId, artifactId, version, classifier, extension, snapshotVersion, filePath);
     }
 
     @Override

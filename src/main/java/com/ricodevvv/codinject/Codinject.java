@@ -49,6 +49,7 @@ public final class Codinject implements AutoCloseable {
     private volatile Logger logger = Logger.getLogger("Codinject");
     private volatile boolean verifyChecksums = true;
     private volatile boolean allowUnsafe = true;
+    private volatile boolean gradleMetadata = true;
     private LibraryClassLoader classLoader;
     private Resolver resolver;
     private Relocator relocator;
@@ -148,6 +149,20 @@ public final class Codinject implements AutoCloseable {
      */
     public Codinject allowUnsafe(boolean allowUnsafe) {
         this.allowUnsafe = allowUnsafe;
+        return this;
+    }
+
+    /**
+     * Whether to read the {@code .module} file Gradle publishes next to the POM. Enabled by default.
+     * It's what makes Kotlin Multiplatform libraries pick their {@code -jvm} jar, and libraries like Guava
+     * pick the right flavor and Java version. Disable it to go back to POMs only.
+     *
+     * @param gradleMetadata {@code false} to only read POMs
+     * @return this instance
+     */
+    public synchronized Codinject gradleMetadata(boolean gradleMetadata) {
+        this.gradleMetadata = gradleMetadata;
+        this.resolver = null;
         return this;
     }
 
@@ -302,7 +317,7 @@ public final class Codinject implements AutoCloseable {
 
     private Resolver resolver() {
         if (resolver == null) {
-            resolver = new Resolver(folder, new Downloader(logger, verifyChecksums), logger);
+            resolver = new Resolver(folder, new Downloader(logger, verifyChecksums), logger, gradleMetadata);
         }
         return resolver;
     }

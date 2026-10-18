@@ -9,6 +9,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -22,7 +23,8 @@ import java.util.logging.Logger;
 
 /**
  * Walks the POMs to find the runtime dependency tree and downloads the files into the local folder,
- * using the same layout as {@code ~/.m2/repository}.
+ * using the same layout as {@code ~/.m2/repository}. When a POM says it was published with Gradle module
+ * metadata, the {@code .module} file is used instead, like Gradle itself does.
  * <p>
  * Conflicts are solved like Maven: the declaration closest to the root wins.
  */
@@ -35,15 +37,18 @@ final class Resolver {
     private final Path folder;
     private final Downloader downloader;
     private final Logger logger;
+    private final boolean gradleMetadata;
     private final Map<Artifact, Artifact> versions = new HashMap<>();
     private final Map<Artifact, Pom> inherited = new HashMap<>();
     private final Map<Artifact, Pom> effective = new HashMap<>();
+    private final Map<Artifact, GradleModule> modules = new HashMap<>();
     private final Map<String, String> origins = new HashMap<>();
 
-    Resolver(Path folder, Downloader downloader, Logger logger) {
+    Resolver(Path folder, Downloader downloader, Logger logger, boolean gradleMetadata) {
         this.folder = folder;
         this.downloader = downloader;
         this.logger = logger;
+        this.gradleMetadata = gradleMetadata;
     }
 
     /**
@@ -68,12 +73,16 @@ final class Resolver {
             if (!resolved.add(node.artifact.getKey())) {
                 continue;
             }
-            Artifact artifact = concrete(node.artifact, repos);
-            Pom pom = effective(artifact, repos, 0);
+            Component component = component(concrete(node.artifact, repos), repos, 0);
+            Artifact artifact = component.artifact;
+            if (!artifact.getKey().equals(node.artifact.getKey()) && !resolved.add(artifact.getKey())) {
+                continue;
+            }
+            Pom pom = component.pom;
             if (rootPom == null) {
                 rootPom = pom;
             }
-            if (!"pom".equals(pom.packaging) || !"jar".equals(artifact.getExtension())) {
+            if (component.hasFile) {
                 result.add(artifact);
             }
             if (!transitive) {
@@ -249,6 +258,85 @@ final class Resolver {
         }
     }
 
+    private Component component(Artifact artifact, Set<String> repos, int depth) throws IOException {
+        Pom pom = effective(artifact, repos, 0);
+        if (gradleMetadata && (pom.gradleMetadata || pom.missing) && artifact.getClassifier() == null && "jar".equals(artifact.getExtension())) {
+            Component component = gradle(artifact, repos, depth);
+            if (component != null) {
+                return component;
+            }
+        }
+        return new Component(artifact, !"pom".equals(pom.packaging) || !"jar".equals(artifact.getExtension()), pom);
+    }
+
+    private Component gradle(Artifact artifact, Set<String> repos, int depth) throws IOException {
+        if (depth > MAX_DEPTH) {
+            throw new IOException("Too many available-at redirections at " + artifact);
+        }
+        GradleModule module = module(artifact, repos);
+        Map<String, Object> variant = module == null ? null : module.runtimeVariant(Injector.JAVA_VERSION);
+        if (variant == null) {
+            return null;
+        }
+        Artifact target = GradleModule.availableAt(variant);
+        if (target != null) {
+            return component(concrete(target, repos), repos, depth + 1);
+        }
+
+        Pom pom = Pom.empty(artifact);
+        pom.missing = false;
+        pom.management.addAll(GradleModule.constraints(variant));
+        for (Pom.Dependency platform : GradleModule.dependencies(variant, true)) {
+            for (Pom.Dependency managed : platform(platform, repos)) {
+                if (pom.managed(managed) == null) {
+                    pom.management.add(managed);
+                }
+            }
+        }
+        for (Pom.Dependency dependency : GradleModule.dependencies(variant, false)) {
+            Pom.Dependency managed = pom.managed(dependency);
+            if (dependency.version == null && managed != null) {
+                dependency.version = managed.version;
+            }
+            pom.dependencies.add(dependency);
+        }
+
+        List<String> jars = GradleModule.jars(variant);
+        if (jars.size() > 1) {
+            logger.warning(artifact + " has " + jars.size() + " jars in its runtime variant, only " + jars.get(0) + " is loaded");
+        }
+        return new Component(jars.isEmpty() ? artifact : artifact.withFile(jars.get(0)), !jars.isEmpty(), pom);
+    }
+
+    private List<Pom.Dependency> platform(Pom.Dependency platform, Set<String> repos) throws IOException {
+        if (platform.version == null) {
+            return Collections.emptyList();
+        }
+        Artifact artifact = concrete(new Artifact(platform.groupId, platform.artifactId, platform.version, null, "pom"), repos);
+        Pom pom = effective(artifact, repos, 0);
+        if (pom.gradleMetadata || pom.missing) {
+            GradleModule module = module(artifact, repos);
+            Map<String, Object> variant = module == null ? null : module.platformVariant();
+            if (variant != null) {
+                return GradleModule.constraints(variant);
+            }
+        }
+        return pom.management;
+    }
+
+    private GradleModule module(Artifact artifact, Set<String> repos) throws IOException {
+        if (modules.containsKey(artifact)) {
+            return modules.get(artifact);
+        }
+        Path file = folder.resolve(artifact.getModulePath());
+        GradleModule module = null;
+        if (Files.exists(file) || fetch(artifact, artifact.getModulePath(), file, repos) != null) {
+            module = GradleModule.parse(file);
+        }
+        modules.put(artifact, module);
+        return module;
+    }
+
     private Pom effective(Artifact artifact, Set<String> repos, int depth) throws IOException {
         Pom cached = effective.get(artifact);
         if (cached != null) {
@@ -277,6 +365,8 @@ final class Resolver {
         pom.version = raw.version;
         pom.packaging = Pom.interpolate(raw.packaging, properties);
         pom.parent = raw.parent;
+        pom.gradleMetadata = raw.gradleMetadata;
+        pom.missing = raw.missing;
         pom.properties.putAll(properties);
         pom.repositories.addAll(raw.repositories);
 
@@ -379,6 +469,19 @@ final class Resolver {
             throw failure;
         }
         return null;
+    }
+
+    private static final class Component {
+
+        final Artifact artifact;
+        final boolean hasFile;
+        final Pom pom;
+
+        Component(Artifact artifact, boolean hasFile, Pom pom) {
+            this.artifact = artifact;
+            this.hasFile = hasFile;
+            this.pom = pom;
+        }
     }
 
     private static final class Node {

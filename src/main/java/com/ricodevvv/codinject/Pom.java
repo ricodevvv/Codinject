@@ -3,6 +3,8 @@ package com.ricodevvv.codinject;
 import org.w3c.dom.Element;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -22,6 +24,8 @@ final class Pom {
     String version;
     String packaging;
     Artifact parent;
+    boolean gradleMetadata;
+    boolean missing;
     final Map<String, String> properties = new LinkedHashMap<>();
     final List<Dependency> dependencies = new ArrayList<>();
     final List<Dependency> management = new ArrayList<>();
@@ -32,12 +36,15 @@ final class Pom {
         pom.groupId = artifact.getGroupId();
         pom.artifactId = artifact.getArtifactId();
         pom.version = artifact.getVersion();
+        pom.missing = true;
         return pom;
     }
 
     static Pom parse(Path file) throws IOException {
-        Element project = Xml.parse(file);
+        byte[] data = Files.readAllBytes(file);
+        Element project = Xml.parse(data, file.toString());
         Pom pom = new Pom();
+        pom.gradleMetadata = new String(data, StandardCharsets.UTF_8).contains(GradleModule.MARKER);
         pom.groupId = Xml.text(project, "groupId");
         pom.artifactId = Xml.text(project, "artifactId");
         pom.version = Xml.text(project, "version");
@@ -79,6 +86,7 @@ final class Pom {
         pom.version = version != null ? version : parent.getVersion();
         pom.packaging = packaging;
         pom.parent = parent;
+        pom.gradleMetadata = gradleMetadata;
         pom.properties.putAll(parentPom.properties);
         pom.properties.putAll(properties);
         merge(pom.dependencies, parentPom.dependencies, dependencies);

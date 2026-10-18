@@ -75,6 +75,26 @@ class MavenCentralTest {
     }
 
     @Test
+    void picksTheJvmJarOfKotlinMultiplatformLibraries() {
+        List<String> keys = new ArrayList<>();
+        for (Artifact artifact : codinject.resolve("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")) {
+            keys.add(artifact.getKey());
+        }
+        assertEquals("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm", keys.get(0));
+        assertTrue(keys.contains("org.jetbrains.kotlin:kotlin-stdlib"), keys.toString());
+        assertTrue(!keys.contains("org.jetbrains.kotlinx:kotlinx-coroutines-core"), keys.toString());
+    }
+
+    @Test
+    void loadsGuavaThroughItsGradleMetadata() throws Exception {
+        codinject.dependency("com.google.guava:guava:33.3.1-jre").load();
+
+        Class<?> list = Class.forName("com.google.common.collect.ImmutableList", true, codinject.getClassLoader());
+        assertEquals("[1, 2]", list.getMethod("of", Object.class, Object.class).invoke(null, 1, 2).toString());
+        assertTrue(Class.forName("com.google.common.util.concurrent.internal.InternalFutureFailureAccess", false, codinject.getClassLoader()) != null);
+    }
+
+    @Test
     void picksLatestFromMetadata() {
         Artifact artifact = codinject.resolve("com.google.code.gson:gson:release").get(0);
         assertTrue(Versions.compare(artifact.getVersion(), "2.11.0") >= 0, artifact.toString());

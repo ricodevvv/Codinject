@@ -12,8 +12,6 @@ import javax.xml.parsers.ParserConfigurationException;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -23,12 +21,6 @@ import java.util.List;
 final class Xml {
 
     private Xml() {
-    }
-
-    static Element parse(Path file) throws IOException {
-        try (InputStream in = Files.newInputStream(file)) {
-            return parse(in, file.toString());
-        }
     }
 
     static Element parse(byte[] data, String source) throws IOException {
