@@ -130,7 +130,18 @@ Resolution reads the POMs, more or less like Maven:
 - On conflicts the closest declaration wins, like in Maven.
 - `<repositories>` declared in POMs are used too, but only the `https://` ones.
 
-What it doesn't do: POM profiles are ignored (deps added only inside a profile won't show up), version ranges are picked from metadata with a simple comparator, and it doesn't read Gradle module metadata. If two loads ask for different versions of the same library in the same class loader, the first one wins and you get a warning in the log.
+What it doesn't do: POM profiles are ignored (deps added only inside a profile won't show up), and version ranges are picked from metadata with a simple comparator. If two loads ask for different versions of the same library in the same class loader, the first one wins and you get a warning in the log.
+
+### Gradle module metadata
+
+Libraries built with Gradle publish a `.module` file next to the POM, and their POM carries a `published-with-gradle-metadata` comment saying so. When Codinject sees that comment it reads the `.module` instead of the POM, like Gradle does. That's what gets these cases right:
+
+- **Kotlin Multiplatform.** `kotlinx-coroutines-core` is just a pointer, the real JVM code lives in `kotlinx-coroutines-core-jvm`. With POMs only you'd load the common metadata jar. Now Codinject follows `available-at` and loads the `-jvm` one.
+- **Several flavors in one module.** Guava's `.module` lists a `jre` variant and an `android` one. Codinject always picks the standard JVM one.
+- **Java version.** Variants built for a newer Java than the one running are skipped. If none is left you get a clear error ("needs Java 17 or newer, but this is Java 8") instead of an `UnsupportedClassVersionError` later on.
+- **Platforms.** Dependencies on a platform (Gradle's version of a BOM, like `jackson-bom` or `kotlinx-coroutines-bom`) fill in the versions that other dependencies leave out.
+
+From each module it takes the variant a plain JVM would use at runtime: `java-runtime` usage, library category, standard JVM (not Android), Kotlin `jvm` target, and no optional feature variants. If the module has none, it goes back to the POM. Use `.gradleMetadata(false)` to stick to POMs only.
 
 ## Settings
 
@@ -141,6 +152,7 @@ new Codinject(Paths.get("libs"))
         .target(MyPlugin.class.getClassLoader())
         .logger(getLogger())
         .verifyChecksums(true)
+        .gradleMetadata(true)
         .allowUnsafe(true);
 ```
 
