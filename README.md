@@ -17,7 +17,7 @@ There are zero dependencies. jar-relocator and ASM get downloaded the first time
 
 ## Install
 
-It's on JitPack:
+It's on my Maven repo:
 
 ```groovy
 plugins {
@@ -25,11 +25,11 @@ plugins {
 }
 
 repositories {
-    maven { url = uri('https://jitpack.io') }
+    maven { url = uri('https://maven.ricodevvv.com/public-repo') }
 }
 
 dependencies {
-    implementation 'com.github.ricodevvv:Codinject:1.0.0'
+    implementation 'com.ricodevvv:codinject:1.0.0'
 }
 
 shadowJar {
@@ -39,16 +39,18 @@ shadowJar {
 
 ```xml
 <repository>
-    <id>jitpack</id>
-    <url>https://jitpack.io</url>
+    <id>ricodevvv</id>
+    <url>https://maven.ricodevvv.com/public-repo</url>
 </repository>
 
 <dependency>
-    <groupId>com.github.ricodevvv</groupId>
-    <artifactId>Codinject</artifactId>
+    <groupId>com.ricodevvv</groupId>
+    <artifactId>codinject</artifactId>
     <version>1.0.0</version>
 </dependency>
 ```
+
+JitPack still works too, with `com.github.ricodevvv:Codinject:1.0.0` from `https://jitpack.io`.
 
 Shade it into your jar and relocate it so it doesn't clash with other plugins or apps that ship it too.
 
