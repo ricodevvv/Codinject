@@ -84,4 +84,11 @@ publishing {
             }
         }
     }
+    repositories {
+        maven {
+            name = 'reposilite'
+            url = 'https://maven.ricodevvv.com/public-repo'
+            credentials(PasswordCredentials)
+        }
+    }
 }
